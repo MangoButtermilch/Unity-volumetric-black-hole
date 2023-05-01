@@ -17,8 +17,13 @@ Resolution px | March steps  | Light steps | FPS | GPU LOAD
 -- | ------------- | ------------- | ------- | -- |
  480 x 270 | 500  | 4 | 60 | 64% - 66%
 
+## Volume textures
+
+The provided (pseudo- or 3D-) textures are created with my free volume generator tool:
+
+![Volume generator](Screenshots/volume-generator.png?raw=true "Volume generator")(https://acetix.itch.io/pseudo-volume-generator)
 
 ## Example settings
 
-![Alt text](Screenshots/settings-1.png?raw=true "Example settings 1")
-![Alt text](Screenshots/settings-2.png?raw=true "Example settings 2")
+![Example settings 1](Screenshots/settings-1.png?raw=true "Example settings 1")
+![Example settings 2](Screenshots/settings-2.png?raw=true "Example settings 2")
