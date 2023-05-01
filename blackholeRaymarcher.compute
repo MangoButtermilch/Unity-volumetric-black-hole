@@ -1,8 +1,6 @@
 #pragma kernel Main
 #pragma kernel ProcessTexture
 
-#include "Assets/Shaders/Raymarching Volumetric/RaymarchingHelpers.hlsl"
-
 // 2nd kernel
 float evaporateSpeed;
 float diffuseSpeed;
@@ -98,8 +96,6 @@ float starMinDistance;
 float4 starGradientTiling;
 float starSaturaiton;
 
-#ifndef RAYMARCHING_HELPERS
-
 float2x2 rot(float angle)
 {
   float s = sin(angle);
@@ -128,8 +124,6 @@ void rotate(inout float3 p, float3 euler)
   rotateY(p, euler.y);
   rotateZ(p, euler.z);
 }
-
-#endif
 
 float sdfSubtraction(float d1, float d2)
 {
