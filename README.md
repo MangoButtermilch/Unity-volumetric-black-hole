@@ -17,7 +17,7 @@ GPU |Resolution px | March steps  | Light steps | FPS | GPU LOAD
  GTX 1070 |480 x 270 | 500  | 4 | 60 (clamped) | 64% - 66%
  RTX 3060 |480 x 270 | 500  | 4 | 150 (unclamped) | 33% - 35%
  RTX 3060 |480 x 270 | 500  | 18 | 60 (unclamped) | 100%
- RTX 3060 |850 x 490 | 500  | 4 | 55 - 60 (unclamped) | 33% - 35%
+ RTX 3060 |850 x 490 | 500  | 4 | 55 - 60 (unclamped) | 100%
 
 ## Volume textures
 
