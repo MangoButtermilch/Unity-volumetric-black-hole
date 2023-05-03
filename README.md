@@ -21,7 +21,7 @@ GPU |Resolution px | March steps  | Light steps | FPS | GPU LOAD
 
 ## Volume textures
 
-The provided (pseudo- or 3D-) textures are created with my free volume generator tool:
+The provided (pseudo) 3D textures are created with my free volume generator tool:
 
 ![Volume generator](Screenshots/volume-generator.png?raw=true "Volume generator")(https://acetix.itch.io/pseudo-volume-generator)
 
