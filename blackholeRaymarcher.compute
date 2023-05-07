@@ -20,6 +20,7 @@ int maxSteps;
 float stepSize;
 float minDist;
 float fov;
+float stepSizeIncreaseOverDistance;
 
 // Translating + rotation
 float3 roOffset;
@@ -217,7 +218,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
   float3 ambientOffset2 = float3(0, 0, 0.1);
   float3 ambientOffset3 = float3(0, 0, 0.2);
 
-  for (int i = 0; i < maxSteps; i++)
+    for (int i = 0; i < maxSteps; i++)
   {
     distanceToSingularity = distance(blackHolePosition, previousPos);
     // Nothing to do inside of black hole
@@ -225,6 +226,9 @@ float4 raymarch_scene(float3 ro, float3 rd)
     {
       break;
     }
+    //float distanceFallOff = 1.0 - ((i+1) / (float)maxSteps);
+    float distanceIncrease = ((i+1) / (float)maxSteps);
+    stepSize = pow(distanceIncrease, stepSizeIncreaseOverDistance);
 
     float3 unaffectedDir = normalize(previousRayDir) * stepSize;
     float3 maxAffectedDir = normalize(blackHolePosition - previousPos) * stepSize;
@@ -242,33 +246,26 @@ float4 raymarch_scene(float3 ro, float3 rd)
     float sdfResult = distToScene(newPos, distanceToSingularity);
     density += sdfResult * densityScale * 0.001;
 
-    if (distToCam <= maxLightDist)
+    float lightAccumulation = 0;
+    float3 lightRo = newPos;
+
+    for (int j = 0; j < lightSteps; j++)
     {
-
-      float lightAccumulation = 0;
-      float3 lightRo = newPos;
-
-      for (int j = 0; j < lightSteps; j++)
-      {
-        lightRo += lightVector;
-        float lightDensity = distToScene(lightRo, distanceToSingularity);
-        lightAccumulation += lightDensity * shadowStrength;
-      }
-
-      if (distToCam <= maxAmbientDist)
-      {
-        // Ambient lighting with 3 samples
-        float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
-        float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
-        float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
-        ambientDist += s1 * s2 * s3;
-      }
-
-      float lightTransmission = exp(-lightAccumulation);
-      float shadow = darknessThreshhold + lightTransmission * (1.0 - darknessThreshhold);
-      finalLight += density * transmittance * shadow;
-      transmittance *= exp(-density * lightAbsorb);
+      lightRo += lightVector;
+      float lightDensity = distToScene(lightRo, distanceToSingularity);
+      lightAccumulation += lightDensity * shadowStrength;
     }
+
+    // Ambient lighting with 3 samples
+    float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
+    float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
+    float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
+    ambientDist += s1 * s2 * s3;
+
+    float lightTransmission = exp(-lightAccumulation);
+    float shadow = darknessThreshhold + lightTransmission * (1.0 - darknessThreshhold);
+    finalLight += density * transmittance * shadow;
+    transmittance *= exp(-density * lightAbsorb);
   }
   ambientDist *= ambientStrength * 0.001;
   transmission = exp(-density);

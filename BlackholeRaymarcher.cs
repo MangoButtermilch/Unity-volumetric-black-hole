@@ -20,6 +20,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private float _fov = 45;
     [SerializeField] private int _maxSteps = 500;
     [SerializeField] private float _stepSize = 0.04f;
+    [SerializeField] private float _stepSizeIncreaseOverDistance = 2f;
     [SerializeField][Range(0.00001f, 0.1f)] private float _minDist = 0.01f;
     [SerializeField] private Vector3 _roOffset = new Vector3(0, 0, -2.54f);
     [SerializeField] private Vector3 _roRotation = new Vector3(0, 0, 0);
@@ -140,6 +141,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetInt("maxSteps", _maxSteps);
         _computeShader.SetFloat("minDist", _minDist);
         _computeShader.SetFloat("stepSize", _stepSize);
+        _computeShader.SetFloat("stepSizeIncreaseOverDistance", _stepSizeIncreaseOverDistance);
         _computeShader.SetFloat("fov", _fov);
         _computeShader.SetFloat("mipMapLevel", _mipMapLevel);
 
