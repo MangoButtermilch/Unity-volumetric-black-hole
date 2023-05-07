@@ -261,7 +261,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
         float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
         float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
         float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
-        ambientDist += s1 + s2 + s3;
+        ambientDist += s1 * s2 * s3;
       }
 
       float lightTransmission = exp(-lightAccumulation);
