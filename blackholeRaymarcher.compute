@@ -278,10 +278,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
   float4 gradientColor = gradientTex.SampleLevel(samplergradientTex, uv, 0);
 
   float4 ambientColor = ambientLight * ambientDist;
-  float4 col = lightingResult.r * brightness * float4(lightColor, 1) + ambientColor;
-
-  col *= gradientColor;
-
+  float4 col = lightingResult.r * brightness * float4(lightColor, 1) * gradientColor + ambientColor;
   return col;
 }
 
