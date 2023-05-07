@@ -240,9 +240,6 @@ float4 raymarch_scene(float3 ro, float3 rd)
     previousPos = newPos;
     previousRayDir = newRayDir;
 
-    // To reduce different operations over distance
-    float distToCam = distance(ro, newPos);
-
     float sdfResult = distToScene(newPos, distanceToSingularity);
     density += sdfResult * densityScale * 0.001;
 
