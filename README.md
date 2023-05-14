@@ -1,7 +1,7 @@
 # Unity volumetric black hole
 ## Compute shader approach for rendering a volumetric black hole in Unity
 
-[![Render](https://img.youtube.com/vi/bhgIQqslpN0/0.jpg)](https://www.youtube.com/watch?v=bhgIQqslpN0)
+![Experimental](Screenshots/experimental.png?raw=true "Experimental")(https://www.youtube.com/watch?v=bhgIQqslpN0)
 Video Showcase of current version: https://www.youtube.com/watch?v=aQ-_nNzhalA
 
 ## Resources
