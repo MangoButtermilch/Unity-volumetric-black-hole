@@ -15,6 +15,7 @@ Video Showcase of current version: https://www.youtube.com/watch?v=aQ-_nNzhalA
 GPU |Resolution px | March steps  | Light steps | FPS | GPU LOAD
 -- | -- | ------------- | ------------- | ------- | -- |
  GTX 1070 |480 x 270 | 500  | 4 | 60 (clamped) | 64% - 66%
+ GTX 1070 |720 x 405 | 750  | 1 | 60 (clamped) | 95% - 100%
  RTX 3060 |480 x 270 | 500  | 4 | 150 (unclamped) | 33% - 35%
  RTX 3060 |480 x 270 | 500  | 18 | 60 (unclamped) | 100%
  RTX 3060 |850 x 490 | 500  | 4 | 55 - 60 (unclamped) | 100%
