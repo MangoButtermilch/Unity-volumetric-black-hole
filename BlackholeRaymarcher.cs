@@ -21,7 +21,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private int _maxSteps = 500;
     [SerializeField] private float _stepSize = 0.04f;
     [SerializeField] private float _stepSizeIncreaseOverDistance = 2f;
-    [SerializeField][Range(0.00001f, 0.1f)] private float _minDist = 0.01f;
+    [SerializeField][Range(0.00001f, 1.1f)] private float _minDist = 0.01f;
     [SerializeField] private Vector3 _roOffset = new Vector3(0, 0, -2.54f);
     [SerializeField] private Vector3 _roRotation = new Vector3(0, 0, 0);
     [SerializeField] private Vector3 _rdRotation = new Vector3(0, 0, 0);
@@ -37,7 +37,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private float _accretionDiskHeight = 0.25f;
     [Header("Nebula")]
     [SerializeField] private Texture3D _nebulaTexture;
-    [SerializeField] private float _nebulaScale = 3.2f;
+    [SerializeField] private Vector3 _nebulaScale;
     [SerializeField] private Vector3 _nebulaTwirl;
     [SerializeField] private float _nebulaCutoff = 1f;
     [Header("FBM")]
@@ -50,13 +50,17 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private float _fbmIntensity = 0.53f;
     [SerializeField] private Vector3 _fbmRotation = new Vector3(-0.3f, 0f, 0f);
     [SerializeField] private Vector3 _fbmDirection = new Vector3(0f, 0f, -0.09f);
+    [Header("Center")]
+    [SerializeField] private float _centerIntensity = 1f;
+    [SerializeField] private float _centerFallOff = 1f;
     [Header("Light")]
     [SerializeField] private Transform _light;
     [SerializeField] private Texture2D _gradient;
     [SerializeField] private Vector2 _gradientTiling = Vector2.one;
     [SerializeField] private Vector2 _gradientOffset = Vector2.zero;
-    [SerializeField][Range(0f, 1f)] private float _dopplerStrength = 0.15f;
+    [SerializeField][Range(0f, 10f)] private float _dopplerStrength = 0.15f;
     [SerializeField] private Vector3 _dopplerOffset;
+    [SerializeField] private float _dopplerAngle;
     [SerializeField][Range(0f, 1f)] private float _densityScale = 0.04f;
     [SerializeField][Range(0f, 10f)] private float _shadowStrength = 2f;
     [SerializeField] private float _lightAbsorb = 0.59f;
@@ -65,6 +69,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private int _lightSteps = 12;
     [SerializeField] private float _maxLightDist = 10f;
     [SerializeField] private float _maxAmbientDist = 10f;
+    [SerializeField] private float _lightCenterBrightness = 1;
     [SerializeField][Range(0f, 10f)] private float _ambientStrength = 1f;
     [SerializeField][Range(0f, 1f)] private float _lightStepsSize = 0.04f;
     [SerializeField] private Vector3 _lightDir = new Vector3(-7.3f, -3.22f, -2.42f);
@@ -82,21 +87,23 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private Vector3 _starRotation;
     [SerializeField] private float _starMinDistance;
 
-    private int frameCount = 0;
 
     void Start() {
+        //_rawImage = FindObjectOfType<RawImage> ();
         _rawImage.color = Color.white;
         _mainKernel = _computeShader.FindKernel("Main");
         _processKernel = _computeShader.FindKernel("ProcessTexture");
         GenerateImage();
     }
 
+    int frameCount = 0;
     void Update() {
         frameCount++;
 
         if (frameCount % 2 == 0)
             GenerateImage();
 
+        if (frameCount > 1000) frameCount = 0;
     }
 
     private void GenerateImage() {
@@ -120,6 +127,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
 
         }
 
+
         _computeShader.SetTexture(_mainKernel, "starGradient", _starGradient);
         _computeShader.SetTexture(_mainKernel, "nebulaTex", _nebulaTexture);
         _computeShader.SetTexture(_mainKernel, "fbmNoiseTex", _fbmTexture);
@@ -135,6 +143,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("evaporateSpeed", _evaporateSpeed);
         _computeShader.SetFloat("diffuseSpeed", _diffuseSpeed);
         _computeShader.SetFloat("blurRadius", _blurRadius);
+
 
         _computeShader.SetFloat("amplitude", 1f);
         //marching
@@ -154,6 +163,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("brightness", _brightness);
 
         // translating + rotation
+        //    _roOffset.z = Mathf.Lerp(_roOffset.z, -300f, Time.deltaTime * _amplitudeBuffer * 0.07f);
         _computeShader.SetVector("roOffset", _roOffset);
         _computeShader.SetVector("sdfRotation", _sdfRotation);
         _computeShader.SetVector("roRotation", _roRotation);
@@ -163,7 +173,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("deltaTime", Time.deltaTime);
 
         //nebula
-        _computeShader.SetFloat("nebulaScale", _nebulaScale);
+        _computeShader.SetVector("nebulaScale", _nebulaScale);
         _computeShader.SetVector("nebulaTwirl", _nebulaTwirl);
         _computeShader.SetFloat("nebulaCutoff", _nebulaCutoff);
 
@@ -192,13 +202,28 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("darknessThreshhold", _darknessThreshhold);
         _computeShader.SetFloat("lightAbsorb", _lightAbsorb);
         _computeShader.SetFloat("transmittance", _transmittance);
+        _computeShader.SetFloat("lightCenterBrightness", _lightCenterBrightness);
         _computeShader.SetInt("lightSteps", _lightSteps);
         _computeShader.SetFloat("lightStepSize", _lightStepsSize);
         _computeShader.SetFloat("shadowStrength", _shadowStrength);
         _computeShader.SetFloat("ambientStrength", _ambientStrength);
         _computeShader.SetFloat("dopplerStrength", _dopplerStrength);
         _computeShader.SetVector("dopplerOffset", _dopplerOffset);
+        _computeShader.SetFloat("dopplerAngle", _dopplerAngle);
 
+        //stars
+        _computeShader.SetFloat("starDiv", _starDiv);
+        _computeShader.SetVector("starOffset", _starOffset);
+        _computeShader.SetFloat("starBrightness", _starBrightness);
+        _computeShader.SetTexture(_mainKernel, "starGradient", _starGradient);
+        _computeShader.SetVector("starGradientTiling", _starGradientTiling);
+        _computeShader.SetVector("starRotation", _starRotation);
+        _computeShader.SetFloat("starMinDistance", _starMinDistance);
+        _computeShader.SetFloat("starSaturaiton", _starSaturaiton);
+
+        //center
+        _computeShader.SetFloat("centerIntensity", _centerIntensity);
+        _computeShader.SetFloat("centerFallOff", _centerFallOff);
 
         _computeShader.Dispatch(_mainKernel, resolution.x / 16, resolution.y / 16, 1);
         if (_blur) _computeShader.Dispatch(_processKernel, resolution.x / 8, resolution.y / 8, 1);

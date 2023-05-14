@@ -1,6 +1,8 @@
 #pragma kernel Main
 #pragma kernel ProcessTexture
 
+#include "Assets/Shaders/Raymarching Volumetric/RaymarchingHelpers.hlsl"
+
 // 2nd kernel
 float evaporateSpeed;
 float diffuseSpeed;
@@ -19,8 +21,8 @@ int height;
 int maxSteps;
 float stepSize;
 float minDist;
-float fov;
 float stepSizeIncreaseOverDistance;
+float fov;
 
 // Translating + rotation
 float3 roOffset;
@@ -31,7 +33,7 @@ float3 sdfRotation;
 // Nebula (currently jets from black hole)
 Texture3D nebulaTex;
 SamplerState samplernebulaTex;
-float nebulaScale;
+float3 nebulaScale;
 float3 nebulaTwirl;
 float nebulaCutoff;
 
@@ -57,6 +59,7 @@ float3 lightDirection;
 float3 lightColor;
 float lightStepSize;
 int lightSteps;
+float lightCenterBrightness;
 
 float4 ambientLight;
 float brightness;
@@ -74,6 +77,7 @@ float4 colorPallete[4];
 
 //! TODO add doppler effect
 float dopplerStrength;
+float dopplerAngle;
 float3 dopplerOffset;
 
 // Black hole
@@ -96,6 +100,12 @@ float3 starRotation;
 float starMinDistance;
 float4 starGradientTiling;
 float starSaturaiton;
+
+//center
+float centerIntensity;
+float centerFallOff;
+
+#ifndef RAYMARCHING_HELPERS
 
 float2x2 rot(float angle)
 {
@@ -126,6 +136,8 @@ void rotate(inout float3 p, float3 euler)
   rotateZ(p, euler.z);
 }
 
+#endif
+
 float sdfSubtraction(float d1, float d2)
 {
   return max(d1, -d2);
@@ -155,6 +167,8 @@ float distToSphere(float3 p, float s)
 
 float distToAccretionDisk(float3 p)
 {
+
+
   float p1 = distToRoundedCylinder(p, accretionDiskRadius, accretionDiskHeight, 0.01);
   float p2 = distToSphere(p, 3.5);
   return opSmoothSubtraction(p2, p1, 0.5);
@@ -170,6 +184,7 @@ float distToNebula(float3 p, float distToSingularity)
 
   rotate(nebulaCoord, radians(sdfRotation));
   rotate(nebulaCoord, radians(nebulaTwirl) * (fbmSpeed * time - distToSingularity));
+  
   nebulaCoord += .5; // centering
   return nebulaTex.SampleLevel(samplernebulaTex, nebulaCoord, mipMapLevel);
 }
@@ -185,8 +200,8 @@ float distToBlackHole(float3 p, float distToSingularity)
   fbmCoord += (fbmDirection * time);
 
   float fbmNoise = fbmNoiseTex.SampleLevel(samplerfbmNoiseTex, fbmCoord, mipMapLevel).r * fbmIntensity;
-
-  return distToAccretionDisk(accretionDiskCoord) + fbmNoise;
+  
+  return distToAccretionDisk(accretionDiskCoord) + abs(fbmNoise);
 }
 
 float distToScene(float3 p, float distToSingularity)
@@ -200,13 +215,18 @@ float distToScene(float3 p, float distToSingularity)
   return sdfSubtraction(distNebula, distBlackHole);
 }
 
+float distToStars(float3 p) {
+
+    float4 stars = starTex.SampleLevel(samplerstarTex, p + starOffset, 0);
+    return stars.r;
+}
+
 float4 raymarch_scene(float3 ro, float3 rd)
 {
   float transmission = 0;
   float finalLight = 0;
   float3 lightingResult = float3(0, 0, 0);
-  float3 lightVector = normalize(lightDirection) * lightStepSize;
-
+  
   float3 previousPos = ro;
   float density = 0.0;
 
@@ -218,17 +238,22 @@ float4 raymarch_scene(float3 ro, float3 rd)
   float3 ambientOffset2 = float3(0, 0, 0.1);
   float3 ambientOffset3 = float3(0, 0, 0.2);
 
-    for (int i = 0; i < maxSteps; i++)
+
+    float3 dopplerOffsetDir = normalize(dopplerOffset);
+
+  for (int i = 0; i < maxSteps; i++)
   {
+
     distanceToSingularity = distance(blackHolePosition, previousPos);
     // Nothing to do inside of black hole
     if (distanceToSingularity < schwarzSchildRadius + .5)
     {
       break;
     }
+
+
     //float distanceFallOff = 1.0 - ((i+1) / (float)maxSteps);
     float distanceIncrease = ((i+1) / (float)maxSteps);
-    stepSize = pow(distanceIncrease, stepSizeIncreaseOverDistance);
 
     float3 unaffectedDir = normalize(previousRayDir) * stepSize;
     float3 maxAffectedDir = normalize(blackHolePosition - previousPos) * stepSize;
@@ -240,39 +265,56 @@ float4 raymarch_scene(float3 ro, float3 rd)
     previousPos = newPos;
     previousRayDir = newRayDir;
 
+    float distToCam = distance(ro, newPos);
+
     float sdfResult = distToScene(newPos, distanceToSingularity);
     density += sdfResult * densityScale * 0.001;
 
     float lightAccumulation = 0;
     float3 lightRo = newPos;
 
+    // Light dir outwards form center
+    float3 lightDir = normalize(blackHolePosition - newPos);
+    float3 lightVector = normalize(lightDir) * lightStepSize * centerIntensity; 
+
+    float3 view = normalize(rd - dopplerOffset);
+
     for (int j = 0; j < lightSteps; j++)
     {
       lightRo += lightVector;
+      //Doppler is currently wrong. Trying to calculate the angle between light ray and camera view but does not take black hole orientation and disk rotation dir into account
+      float doppler =  (1 - dot(normalize(lightVector), view)) * dopplerStrength;
       float lightDensity = distToScene(lightRo, distanceToSingularity);
-      lightAccumulation += lightDensity * shadowStrength;
-    }
+
+      lightAccumulation += lightDensity * shadowStrength * doppler;
+    } 
+   
 
     // Ambient lighting with 3 samples
-    float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
-    float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
-    float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
-    ambientDist += s1 * s2 * s3;
+   /* float s1 = 1;//distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
+    float s2 = 1;//distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
+    float s3 = 1;//distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
+    ambientDist += s1 * s2 * s3;*/
 
     float lightTransmission = exp(-lightAccumulation);
     float shadow = darknessThreshhold + lightTransmission * (1.0 - darknessThreshhold);
     finalLight += density * transmittance * shadow;
     transmittance *= exp(-density * lightAbsorb);
+
+    
   }
-  ambientDist *= ambientStrength * 0.001;
+
+  ambientDist = 0;//*= ambientStrength * 0.001;
   transmission = exp(-density);
   lightingResult = float3(finalLight, transmission, transmittance);
 
-  float2 uv = float2(0, lightingResult.r) * gradientTiling + gradientOffset;
+  float2 uv = float2(0, saturate(lightingResult.r)) * gradientTiling + gradientOffset;
   float4 gradientColor = gradientTex.SampleLevel(samplergradientTex, uv, 0);
 
   float4 ambientColor = ambientLight * ambientDist;
   float4 col = lightingResult.r * brightness * float4(lightColor, 1) * gradientColor + ambientColor;
+
+
   return col;
 }
 
@@ -287,6 +329,7 @@ void Main(uint2 id : SV_DispatchThreadID)
 
   rotate(ro, radians(roRotation));
   rotate(rd, radians(rdRotation));
+
 
   float4 raymarchRes = raymarch_scene(ro, rd);
 
