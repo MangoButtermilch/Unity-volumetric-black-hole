@@ -1,8 +1,8 @@
 # Unity volumetric black hole
 ## Compute shader approach for rendering a volumetric black hole in Unity
 
-![Experimental](Screenshots/experimental.png?raw=true "Experimental")(https://www.youtube.com/watch?v=bhgIQqslpN0)
-Video Showcase of current version: https://www.youtube.com/watch?v=aQ-_nNzhalA
+![Experimental](Screenshots/experimental.png?raw=true "Experimental")(https://www.youtube.com/watch?v=2_W_-2elfEs)
+Video Showcase of current version: https://www.youtube.com/watch?v=2_W_-2elfEs
 
 ## Resources
 - The original approach for rendering the black hole comes from this blog post: https://medium.com/dotcrossdot/raymarching-simulating-a-black-hole-53624a3684d3
