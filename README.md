@@ -9,7 +9,7 @@ Video Showcase of current version: https://www.youtube.com/watch?v=aQ-_nNzhalA
 - The original approach for rendering volumetric clouds/nebulae comes from this tutorial: https://www.youtube.com/watch?v=0G8CVQZhMXw
 
 
-## Benchmark
+## Benchmark (before 4bfca642bbb7e9a593a03560ea4fb33170b2edce)
 
 
 GPU |Resolution px | March steps  | Light steps | FPS | GPU LOAD
