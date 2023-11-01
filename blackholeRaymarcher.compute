@@ -1,6 +1,8 @@
 #pragma kernel Main
 #pragma kernel ProcessTexture
 
+#include "Assets/Shaders/Raymarching Volumetric/RaymarchingHelpers.hlsl"
+
 // 2nd kernel
 float evaporateSpeed;
 float diffuseSpeed;
@@ -19,8 +21,9 @@ int height;
 int maxSteps;
 float stepSize;
 float minDist;
-float fov;
 float stepSizeIncreaseOverDistance;
+float fov;
+float offsetVecStrength;
 
 // Translating + rotation
 float3 roOffset;
@@ -29,15 +32,23 @@ float3 rdRotation;
 float3 sdfRotation;
 
 // Nebula (currently jets from black hole)
-Texture3D nebulaTex;
-SamplerState samplernebulaTex;
-float nebulaScale;
-float3 nebulaTwirl;
-float nebulaCutoff;
+Texture3D jetTex;
+SamplerState samplerjetTex;
+
+Texture3D jetTexLowRes;
+SamplerState samplerjetTexLowRes;
+
+float3 jetScale;
+float3 jetTwirl;
+float jetCutoff;
 
 // Fbm noise (currently used for accretion disk)
 Texture3D fbmNoiseTex;
 SamplerState samplerfbmNoiseTex;
+
+Texture3D fbmNoiseTexLowRes;
+SamplerState samplerfbmNoiseTexLowRes;
+
 float fbmSpeed;
 float fbmDiv;
 float fbmH;//for realtime 3D Noise
@@ -57,6 +68,7 @@ float3 lightDirection;
 float3 lightColor;
 float lightStepSize;
 int lightSteps;
+float lightCenterBrightness;
 
 float4 ambientLight;
 float brightness;
@@ -68,12 +80,14 @@ float densityScale;
 float darknessThreshhold;
 float lightAbsorb;
 float transmittance;
+float transmittanceThreshhold;
 float shadowStrength;
 float ambientStrength;
 float4 colorPallete[4];
 
 //! TODO add doppler effect
 float dopplerStrength;
+float dopplerAngle;
 float3 dopplerOffset;
 
 // Black hole
@@ -82,7 +96,12 @@ float schwarzSchildRadius;
 float spaceDistortion;
 float4 accretionDiskColor;
 float accretionDiskRadius;
+float accretionDiskInnerRadius;
 float accretionDiskHeight;
+float accretionDiskGrowFactor;
+float accretionDiskTwirlFactor;
+float accretionDiskRotationFactor;
+float accretionDiskNoiseFactor;
 
 //! TODO stars
 Texture3D<float4> starTex;
@@ -96,6 +115,13 @@ float3 starRotation;
 float starMinDistance;
 float4 starGradientTiling;
 float starSaturaiton;
+
+//center
+float centerIntensity;
+float centerFallOff;
+
+#ifndef RAYMARCHING_HELPERS
+
 
 float2x2 rot(float angle)
 {
@@ -126,6 +152,17 @@ void rotate(inout float3 p, float3 euler)
   rotateZ(p, euler.z);
 }
 
+float smoothMin(float dstA, float dstB, float k) {
+    float h = max(k - abs(dstA - dstB), 0) / k;
+    return min(dstA, dstB) - h * h*h*k * 1 / 6.0;
+}
+
+//iq noise
+float hash(float n) {
+    return frac(sin(n) * 43758.5453);
+}
+#endif
+
 float sdfSubtraction(float d1, float d2)
 {
   return max(d1, -d2);
@@ -135,6 +172,20 @@ float opSmoothSubtraction(float d1, float d2, float k)
 {
   float h = clamp(0.5 - 0.5 * (d2 + d1) / k, 0.0, 1.0);
   return lerp(d2, -d1, h) + k * h * (1.0 - h);
+}
+
+//https://www.shadertoy.com/view/Xd23WV
+float noise( in float3 x )
+{
+	float3 p = floor(x);
+	float3 f = frac(x);
+	
+	f = f*f*(3.0-2.0*f);
+	float n = p.x + p.y*57.0 + 113.0*p.z;
+	return lerp(lerp(lerp( hash(n+  0.0), hash(n+  1.0),f.x),
+				   lerp( hash(n+ 57.0), hash(n+ 58.0),f.x),f.y),
+			   lerp(lerp( hash(n+113.0), hash(n+114.0),f.x),
+				   lerp( hash(n+170.0), hash(n+171.0),f.x),f.y),f.z);
 }
 
 float getSpaceDistortionLerpValue(float schwarzschildRadius, float distanceToSingularity, float spaceDistortion)
@@ -153,51 +204,105 @@ float distToSphere(float3 p, float s)
   return length(p) - s;
 }
 
-float distToAccretionDisk(float3 p)
+
+float distToAccretionDisk(float3 p, float distToSingularity)
 {
-  float p1 = distToRoundedCylinder(p, accretionDiskRadius, accretionDiskHeight, 0.01);
-  float p2 = distToSphere(p, 3.5);
-  return opSmoothSubtraction(p2, p1, 0.5);
+  float radialDistance = length(p.xz);
+  float diskHeight = accretionDiskHeight + radialDistance *  accretionDiskGrowFactor;
+
+  const float distanceFallOff = pow(radialDistance, 3.) * 0.000000001;
+
+  //Moving disk in circular motion around black hole center
+  float amplitude =  accretionDiskRotationFactor * distanceFallOff;
+  float frequency = time * fbmSpeed;
+  p.y += sin(frequency) * amplitude;
+  p.z += cos(frequency) * amplitude;
+  p.x += sin(frequency) * amplitude;
+
+  //Adding noise to the outside of the disk
+  float3 noiseCoord = p / 128;
+  const float3 noiseDirection =  float3(0, 1, 5);
+  noiseCoord += noiseDirection * time;
+
+  float n = noise(noiseCoord);
+  p += n * accretionDiskNoiseFactor * distanceFallOff;
+
+  //inner smaller disk
+  float p1 = distToRoundedCylinder(p, accretionDiskRadius, diskHeight, 0.01);
+  float p2 = distToSphere(p, accretionDiskInnerRadius);
+  float inner = opSmoothSubtraction(p2, p1, 0.5);
+
+  //larger outer disk
+  /*float outer1 = distToRoundedCylinder(p, accretionDiskRadius, diskHeight * 5., 0.01);
+  float outer2 = distToSphere(p, accretionDiskInnerRadius * 15.);
+  float outer = opSmoothSubtraction(outer2, outer1, 0.5);*/
+
+  return inner ;// combineSmooth(inner, outer, 1);
 }
 
-float distToNebula(float3 p, float distToSingularity)
-{
-  float3 nebulaCoord = p / nebulaScale;
+float distToJets(float3 p, float distToSingularity, bool insideVolume)
+{ 
+  float tiling = insideVolume ? jetScale : jetScale * 4.;
+  float3 jetCoord = p / jetScale;
 
-  // Don't let nebula go inside of black hole
-  if (distance(nebulaCoord, distToSingularity) < nebulaCutoff)
-    return smoothstep(1, 0, distToSingularity);
+  rotate(jetCoord, radians(sdfRotation));
+  rotate(jetCoord, radians(jetTwirl) * (fbmSpeed *5.* time - distToSingularity));
+  jetCoord += .5; // centering coord
 
-  rotate(nebulaCoord, radians(sdfRotation));
-  rotate(nebulaCoord, radians(nebulaTwirl) * (fbmSpeed * time - distToSingularity));
-  nebulaCoord += .5; // centering
-  return nebulaTex.SampleLevel(samplernebulaTex, nebulaCoord, mipMapLevel);
+  float sampledValue = 0.; 
+  if (!insideVolume) {
+    sampledValue = jetTexLowRes.SampleLevel(samplerjetTexLowRes, jetCoord, mipMapLevel);
+  } else {
+    sampledValue = jetTex.SampleLevel(samplerjetTex, jetCoord, mipMapLevel);
+  }
+
+  // For a smooth transition to cut off jet
+  float blendFactor = smoothstep(jetCutoff - 1.0, jetCutoff + 1.0, distToSingularity);
+  return sampledValue * blendFactor;
 }
 
-float distToBlackHole(float3 p, float distToSingularity)
+float distToBlackHole(float3 p, float distToSingularity, bool insideVolume)
 {
   float3 accretionDiskCoord = p;
-  float3 accretionDiskRot = float3(90, 0, 90);
+  const float3 accretionDiskRot = float3(90, 0, 90);
   rotate(accretionDiskCoord, radians(accretionDiskRot));
 
-  float3 fbmCoord = p / fbmDiv;
+  float tiling = insideVolume ? fbmDiv : fbmDiv * 4.;
+  float3 fbmCoord = p / tiling;
+
+  fbmRotation.x = (1. - (1./ distToSingularity)) * accretionDiskTwirlFactor;
+  fbmRotation.x = clamp(fbmRotation.x, 0.0, 100.);
   rotate(fbmCoord, radians(fbmRotation) * (fbmSpeed * time - distToSingularity));
   fbmCoord += (fbmDirection * time);
 
-  float fbmNoise = fbmNoiseTex.SampleLevel(samplerfbmNoiseTex, fbmCoord, mipMapLevel).r * fbmIntensity;
+  //Decrease intensity over distance
+  float fbmNoise = 0;
+  if (!insideVolume) {
+    fbmNoise = fbmNoiseTexLowRes.SampleLevel(samplerfbmNoiseTexLowRes, fbmCoord, mipMapLevel).r * fbmIntensity;
+  } else {
+    fbmNoise = fbmNoiseTex.SampleLevel(samplerfbmNoiseTex, fbmCoord, mipMapLevel).r * fbmIntensity;
+  }
+  fbmNoise -= .5;
+  fbmNoise *= 2;
 
-  return distToAccretionDisk(accretionDiskCoord) + fbmNoise;
+  return distToAccretionDisk(accretionDiskCoord, distToSingularity) + (fbmNoise);
 }
 
-float distToScene(float3 p, float distToSingularity)
+float distToScene(float3 p, float distToSingularity, bool insideVolume)
 {
-  float3 nebulaCoord = p;
+  float3 jetCoord = p;
   rotate(p, radians(sdfRotation));
 
-  float distNebula = distToNebula(nebulaCoord, distToSingularity);
-  float distBlackHole = distToBlackHole(p, distToSingularity);
+  float distJets = distToJets(jetCoord, distToSingularity, insideVolume);
+  float distBlackHole = distToBlackHole(p, distToSingularity, insideVolume) ;
 
-  return sdfSubtraction(distNebula, distBlackHole);
+  return sdfSubtraction(distJets, distBlackHole);
+}
+
+float distToStars(float3 p) {
+
+    float4 stars = starTex.SampleLevel(samplerstarTex, p + starOffset, 0);
+    return stars.r;
 }
 
 float4 raymarch_scene(float3 ro, float3 rd)
@@ -205,74 +310,111 @@ float4 raymarch_scene(float3 ro, float3 rd)
   float transmission = 0;
   float finalLight = 0;
   float3 lightingResult = float3(0, 0, 0);
-  float3 lightVector = normalize(lightDirection) * lightStepSize;
-
+  
   float3 previousPos = ro;
   float density = 0.0;
 
   float3 previousRayDir = rd;
   float distanceToSingularity = 99999999;
 
-  float ambientDist = 0;
+  /*float ambientDist = 0;
   float3 ambientOffset1 = float3(0, 0, 0.05);
   float3 ambientOffset2 = float3(0, 0, 0.1);
-  float3 ambientOffset3 = float3(0, 0, 0.2);
+  float3 ambientOffset3 = float3(0, 0, 0.2);*/
 
-    for (int i = 0; i < maxSteps; i++)
+  const float3 dopplerOffsetDir = normalize(dopplerOffset); 
+
+  const float cheapStepSize = stepSize * 6.;
+  const float expensiveStepSize = stepSize;
+  float currentStepSize = cheapStepSize;
+
+	bool insideVolume = false;
+	int stepsWithNoDensityCount = 0;
+
+
+  for (int i = 0; i < maxSteps; i++)
   {
     distanceToSingularity = distance(blackHolePosition, previousPos);
     // Nothing to do inside of black hole
-    if (distanceToSingularity < schwarzSchildRadius + .5)
-    {
-      break;
-    }
-    //float distanceFallOff = 1.0 - ((i+1) / (float)maxSteps);
-    float distanceIncrease = ((i+1) / (float)maxSteps);
-    stepSize = pow(distanceIncrease, stepSizeIncreaseOverDistance);
+    if (distanceToSingularity < schwarzSchildRadius + .5) break;
+    //1 - transmittance used as alpha channel
+    if(1. - transmittance >= 1.) break;
 
-    float3 unaffectedDir = normalize(previousRayDir) * stepSize;
-    float3 maxAffectedDir = normalize(blackHolePosition - previousPos) * stepSize;
+    float3 unaffectedDir = normalize(previousRayDir) * currentStepSize;
+    float3 maxAffectedDir = normalize(blackHolePosition - previousPos) * currentStepSize;
     // Calculate how to interpolate between the two previously calculated vectors
     float lerpValue = getSpaceDistortionLerpValue(schwarzSchildRadius, distanceToSingularity, spaceDistortion);
-    float3 newRayDir = normalize(lerp(unaffectedDir, maxAffectedDir, lerpValue)) * stepSize;
+    float3 newRayDir = normalize(lerp(unaffectedDir, maxAffectedDir, lerpValue)) * currentStepSize;
     // Move the lightray along and calculate the sdf result
     float3 newPos = previousPos + newRayDir;
+    //Pull back to clean up errors
+    float3 offsetVec = newRayDir * offsetVecStrength;
+
     previousPos = newPos;
     previousRayDir = newRayDir;
 
-    float sdfResult = distToScene(newPos, distanceToSingularity);
+    float sdfResult = distToScene(newPos, distanceToSingularity, insideVolume);
+    if (sdfResult == 0.0) {
+      stepsWithNoDensityCount++;
+    } else if (!insideVolume) {
+      insideVolume = true;
+      newPos -= offsetVec;
+      currentStepSize = expensiveStepSize;
+      stepsWithNoDensityCount = 0;
+    }
+ 
+    if (stepsWithNoDensityCount >= 1) {
+      insideVolume = false;
+      currentStepSize = cheapStepSize;
+    }
+
     density += sdfResult * densityScale * 0.001;
 
     float lightAccumulation = 0;
-    float3 lightRo = newPos;
+    if (sdfResult > 0) {
+   
+      float3 lightRo = newPos;
+      float3 lightDir = normalize(blackHolePosition - newPos);
+      float3 lightVector = lightDir * lightStepSize * centerIntensity; 
+      lightVector *= (1/(pow(centerFallOff, 4)));
 
-    for (int j = 0; j < lightSteps; j++)
-    {
-      lightRo += lightVector;
-      float lightDensity = distToScene(lightRo, distanceToSingularity);
-      lightAccumulation += lightDensity * shadowStrength;
+      float blendFactor = smoothstep(maxLightDist - 1.0, maxLightDist + 1.0, distanceToSingularity);
+      float3 view = normalize(rd - dopplerOffset);
+      for (int j = 0; j < lightSteps; j++)
+      {
+        lightRo += lightVector;
+        float lightDensity = distToScene(lightRo, distanceToSingularity, false);
+        lightAccumulation += lightDensity * shadowStrength;
+        //Doppler is currently calculated wrong. Trying to calculate the angle between light ray and camera view but does not take black hole orientation and disk rotation dir into account
+        float doppler =  (1. - dot(normalize(lightVector), view)) * dopplerStrength;
+        lightAccumulation *= doppler;
+      } 
     }
-
     // Ambient lighting with 3 samples
-    float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity) * densityScale;
-    float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity) * densityScale;
-    float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity) * densityScale;
-    ambientDist += s1 * s2 * s3;
+/*
+    float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity, false) * densityScale;
+    float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity, false) * densityScale;
+    float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity, false) * densityScale;
+    ambientDist += s1 * s2 * s3;*/
 
     float lightTransmission = exp(-lightAccumulation);
     float shadow = darknessThreshhold + lightTransmission * (1.0 - darknessThreshhold);
     finalLight += density * transmittance * shadow;
     transmittance *= exp(-density * lightAbsorb);
+
   }
-  ambientDist *= ambientStrength * 0.001;
+
+  //ambientDist *= 0;//ambientStrength * 0.0001;
   transmission = exp(-density);
   lightingResult = float3(finalLight, transmission, transmittance);
 
-  float2 uv = float2(0, lightingResult.r) * gradientTiling + gradientOffset;
+  float2 uv = float2(0, saturate(lightingResult.r)) * gradientTiling + gradientOffset;
   float4 gradientColor = gradientTex.SampleLevel(samplergradientTex, uv, 0);
 
-  float4 ambientColor = ambientLight * ambientDist;
-  float4 col = lightingResult.r * brightness * float4(lightColor, 1) * gradientColor + ambientColor;
+  //float4 ambientColor = ambientLight * ambientDist;
+  float4 col = lightingResult.r * brightness * float4(lightColor, 1) * gradientColor;// + ambientColor;
+  col.a = (1. - transmittance);
+
   return col;
 }
 
@@ -288,9 +430,7 @@ void Main(uint2 id : SV_DispatchThreadID)
   rotate(ro, radians(roRotation));
   rotate(rd, radians(rdRotation));
 
-  float4 raymarchRes = raymarch_scene(ro, rd);
-
-  renderTex[id] = float4(raymarchRes.rgb, 1);
+  renderTex[id] = raymarch_scene(ro, rd);
 }
 
 //From Sebastian Lague's Coding adventure: https://youtu.be/X-iSQQgOd1A?t=788
@@ -322,3 +462,4 @@ void ProcessTexture(uint2 id : SV_DispatchThreadID)
 
   renderTex[id.xy] = diffusedAndEvporatedValue;
 }
+
