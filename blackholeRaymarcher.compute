@@ -23,7 +23,6 @@ float stepSize;
 float minDist;
 float stepSizeIncreaseOverDistance;
 float fov;
-float offsetVecStrength;
 
 // Translating + rotation
 float3 roOffset;
@@ -41,6 +40,7 @@ SamplerState samplerjetTexLowRes;
 float3 jetScale;
 float3 jetTwirl;
 float jetCutoff;
+float jetRotationSpeed;
 
 // Fbm noise (currently used for accretion disk)
 Texture3D fbmNoiseTex;
@@ -102,6 +102,7 @@ float accretionDiskGrowFactor;
 float accretionDiskTwirlFactor;
 float accretionDiskRotationFactor;
 float accretionDiskNoiseFactor;
+float accretionDiskNoiseScale;
 
 //! TODO stars
 Texture3D<float4> starTex;
@@ -220,10 +221,10 @@ float distToAccretionDisk(float3 p, float distToSingularity)
   p.x += sin(frequency) * amplitude;
 
   //Adding noise to the outside of the disk
-  float3 noiseCoord = p / 128;
+  //Optionally comment out this part for more performance
+  float3 noiseCoord = p / accretionDiskNoiseScale;
   const float3 noiseDirection =  float3(0, 1, 5);
   noiseCoord += noiseDirection * time;
-
   float n = noise(noiseCoord);
   p += n * accretionDiskNoiseFactor * distanceFallOff;
 
@@ -246,7 +247,7 @@ float distToJets(float3 p, float distToSingularity, bool insideVolume)
   float3 jetCoord = p / jetScale;
 
   rotate(jetCoord, radians(sdfRotation));
-  rotate(jetCoord, radians(jetTwirl) * (fbmSpeed *5.* time - distToSingularity));
+  rotate(jetCoord, radians(jetTwirl) * (jetRotationSpeed * time - distToSingularity));
   jetCoord += .5; // centering coord
 
   float sampledValue = 0.; 
@@ -317,13 +318,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
   float3 previousRayDir = rd;
   float distanceToSingularity = 99999999;
 
-  /*float ambientDist = 0;
-  float3 ambientOffset1 = float3(0, 0, 0.05);
-  float3 ambientOffset2 = float3(0, 0, 0.1);
-  float3 ambientOffset3 = float3(0, 0, 0.2);*/
-
   const float3 dopplerOffsetDir = normalize(dopplerOffset); 
-
   const float cheapStepSize = stepSize * 6.;
   const float expensiveStepSize = stepSize;
   float currentStepSize = cheapStepSize;
@@ -331,6 +326,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
 	bool insideVolume = false;
 	int stepsWithNoDensityCount = 0;
 
+  const float densityFactor = densityScale * 0.001;
 
   for (int i = 0; i < maxSteps; i++)
   {
@@ -347,8 +343,8 @@ float4 raymarch_scene(float3 ro, float3 rd)
     float3 newRayDir = normalize(lerp(unaffectedDir, maxAffectedDir, lerpValue)) * currentStepSize;
     // Move the lightray along and calculate the sdf result
     float3 newPos = previousPos + newRayDir;
-    //Pull back to clean up errors
-    float3 offsetVec = newRayDir * offsetVecStrength;
+    float3 offsetVec = newRayDir;
+
 
     previousPos = newPos;
     previousRayDir = newRayDir;
@@ -368,7 +364,7 @@ float4 raymarch_scene(float3 ro, float3 rd)
       currentStepSize = cheapStepSize;
     }
 
-    density += sdfResult * densityScale * 0.001;
+    density += sdfResult * densityFactor;
 
     float lightAccumulation = 0;
     if (sdfResult > 0) {
@@ -378,7 +374,6 @@ float4 raymarch_scene(float3 ro, float3 rd)
       float3 lightVector = lightDir * lightStepSize * centerIntensity; 
       lightVector *= (1/(pow(centerFallOff, 4)));
 
-      float blendFactor = smoothstep(maxLightDist - 1.0, maxLightDist + 1.0, distanceToSingularity);
       float3 view = normalize(rd - dopplerOffset);
       for (int j = 0; j < lightSteps; j++)
       {
@@ -390,12 +385,6 @@ float4 raymarch_scene(float3 ro, float3 rd)
         lightAccumulation *= doppler;
       } 
     }
-    // Ambient lighting with 3 samples
-/*
-    float s1 = distToScene(newPos + ambientOffset1, distanceToSingularity, false) * densityScale;
-    float s2 = distToScene(newPos + ambientOffset2, distanceToSingularity, false) * densityScale;
-    float s3 = distToScene(newPos + ambientOffset3, distanceToSingularity, false) * densityScale;
-    ambientDist += s1 * s2 * s3;*/
 
     float lightTransmission = exp(-lightAccumulation);
     float shadow = darknessThreshhold + lightTransmission * (1.0 - darknessThreshhold);
@@ -404,7 +393,6 @@ float4 raymarch_scene(float3 ro, float3 rd)
 
   }
 
-  //ambientDist *= 0;//ambientStrength * 0.0001;
   transmission = exp(-density);
   lightingResult = float3(finalLight, transmission, transmittance);
 
@@ -432,6 +420,7 @@ void Main(uint2 id : SV_DispatchThreadID)
 
   renderTex[id] = raymarch_scene(ro, rd);
 }
+
 
 //From Sebastian Lague's Coding adventure: https://youtu.be/X-iSQQgOd1A?t=788
 //Just makes a cool effect

@@ -39,12 +39,14 @@ public class BlackholeRaymarcher : MonoBehaviour {
     [SerializeField] private float _accretionDiskGrowFactor = 0.14f;
     [SerializeField] private float _accretionDiskRotationFactor = 10f;
     [SerializeField] private float _accretionDiskNoiseFactor = 20;
+    [SerializeField] private float _accretionDiskNoiseScale = 64;
     [SerializeField][Range(0f, 1f)] private float _accretionDiskTwirlFactor = .6f;
     [Header("Jets")]
     [SerializeField] private Texture3D _jetTexture;
     [SerializeField] private Texture3D _jetTextureLowRes;
     [SerializeField] private Vector3 _jetScale;
     [SerializeField] private Vector3 _jetTwirl;
+    [SerializeField] private float _jetRotationSpeed = 200f;
     [SerializeField] private float _jetCutoff = 1f;
     [Header("FBM")]
     [SerializeField] private Texture3D _fbmTexture;
@@ -137,6 +139,10 @@ public class BlackholeRaymarcher : MonoBehaviour {
             _mainTexture.filterMode = FilterMode.Trilinear;
             _mainTexture.Create();
 
+
+
+            _rawImage.texture = _mainTexture;
+        }
             _computeShader.SetTexture(_mainKernel, "starGradient", _starGradient);
             _computeShader.SetTexture(_mainKernel, "jetTex", _jetTexture);
             _computeShader.SetTexture(_mainKernel, "jetTexLowRes", _jetTextureLowRes);
@@ -149,10 +155,6 @@ public class BlackholeRaymarcher : MonoBehaviour {
 
             _computeShader.SetInt("width", resolution.x);
             _computeShader.SetInt("height", resolution.y);
-
-
-            _rawImage.texture = _mainTexture;
-        }
 
         _computeShader.SetVector("gradientOffset", _gradientOffset);
         _computeShader.SetVector("gradientTiling", _gradientTiling);
@@ -188,12 +190,10 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetVector("roRotation", _roRotation);
         _computeShader.SetVector("rdRotation", _rdRotation);
 
-        _computeShader.SetFloat("time", Time.time);
-        _computeShader.SetFloat("deltaTime", Time.deltaTime);
-
         //jet
         _computeShader.SetVector("jetScale", _jetScale);
         _computeShader.SetVector("jetTwirl", _jetTwirl);
+        _computeShader.SetFloat("jetRotationSpeed", _jetRotationSpeed);
         _computeShader.SetFloat("jetCutoff", _jetCutoff);
 
         //fbm
@@ -218,6 +218,7 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("accretionDiskGrowFactor", _accretionDiskGrowFactor);
         _computeShader.SetFloat("accretionDiskRotationFactor", _accretionDiskRotationFactor);
         _computeShader.SetFloat("accretionDiskNoiseFactor", _accretionDiskNoiseFactor);
+        _computeShader.SetFloat("accretionDiskNoiseScale", _accretionDiskNoiseScale);
 
         //light
         _computeShader.SetFloat("maxAmbientDist", _maxAmbientDist);
@@ -251,5 +252,8 @@ public class BlackholeRaymarcher : MonoBehaviour {
         _computeShader.SetFloat("centerFallOff", _centerFallOff);
 
 
+
+        _computeShader.SetFloat("time", Time.time);
+        _computeShader.SetFloat("deltaTime", Time.deltaTime);
     }
 }
